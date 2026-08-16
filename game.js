@@ -374,6 +374,8 @@ function createEnemy() {
     state: 'patrol',
     patrolTarget: new THREE.Vector3(5, 0, -5),
     stateTimer: 0,
+    avoidTimer: 0,
+    avoidDir: new THREE.Vector3(1, 0, 0),
     animPhase: 0,
     hitFlash: 0,
     gunRecoil: 0,
@@ -470,6 +472,8 @@ function startGame() {
   enemy.state = 'patrol';
   enemy.patrolTarget.set(8, 0, -8);
   enemy.stateTimer = 0;
+  enemy.avoidTimer = 0;
+  enemy.avoidDir.set(1, 0, 0);
   enemy.animPhase = 0;
   enemy.hitFlash = 0;
   enemy.gunRecoil = 0;
@@ -575,6 +579,105 @@ function resolveCharacterCollisions(position, radius) {
   }
 }
 
+function positionCollidesXZ(position, radius) {
+  for (const { box3 } of colliders) {
+    const minX = box3.min.x - radius;
+    const maxX = box3.max.x + radius;
+    const minZ = box3.min.z - radius;
+    const maxZ = box3.max.z + radius;
+    if (position.x > minX && position.x < maxX && position.z > minZ && position.z < maxZ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function segmentHitsBoxXZ(from, to, radius, box3) {
+  const minX = box3.min.x - radius;
+  const maxX = box3.max.x + radius;
+  const minZ = box3.min.z - radius;
+  const maxZ = box3.max.z + radius;
+
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  let tMin = 0;
+  let tMax = 1;
+  const EPS = 1e-6;
+
+  if (Math.abs(dx) < EPS) {
+    if (from.x <= minX || from.x >= maxX) return false;
+  } else {
+    const invDx = 1 / dx;
+    let t1 = (minX - from.x) * invDx;
+    let t2 = (maxX - from.x) * invDx;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return false;
+  }
+
+  if (Math.abs(dz) < EPS) {
+    if (from.z <= minZ || from.z >= maxZ) return false;
+  } else {
+    const invDz = 1 / dz;
+    let t1 = (minZ - from.z) * invDz;
+    let t2 = (maxZ - from.z) * invDz;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return false;
+  }
+
+  return true;
+}
+
+function isPathBlockedXZ(from, to, radius) {
+  const dir = to.clone().sub(from);
+  dir.y = 0;
+  if (dir.lengthSq() < 1e-6) return false;
+  dir.normalize();
+  const start = from.clone().add(dir.multiplyScalar(0.05));
+
+  for (const { box3 } of colliders) {
+    if (segmentHitsBoxXZ(start, to, radius, box3)) return true;
+  }
+  return false;
+}
+
+function probeClearDistance(start, dir, maxDist, step, radius) {
+  const probe = new THREE.Vector3();
+  for (let d = step; d <= maxDist; d += step) {
+    probe.copy(start).addScaledVector(dir, d);
+    if (positionCollidesXZ(probe, radius)) {
+      return d - step;
+    }
+  }
+  return maxDist;
+}
+
+function chooseEnemyDetourDirection(toPlayerDir) {
+  const left = new THREE.Vector3(-toPlayerDir.z, 0, toPlayerDir.x).normalize();
+  const right = left.clone().negate();
+  const options = [left, right];
+
+  let bestDir = left;
+  let bestScore = -Infinity;
+
+  for (const dir of options) {
+    const clear = probeClearDistance(enemy.position, dir, 6, 0.5, enemy.radius);
+    const endPoint = enemy.position.clone().addScaledVector(dir, clear);
+    const distToPlayer = endPoint.distanceTo(player.position);
+    const score = clear * 1.8 - distToPlayer * 0.08;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestDir = dir;
+    }
+  }
+
+  return bestDir;
+}
+
 function updatePlayer(dt) {
   if (keys['ArrowLeft']) player.rotation += ROTATION_SPEED * dt;
   if (keys['ArrowRight']) player.rotation -= ROTATION_SPEED * dt;
@@ -623,6 +726,7 @@ function updateEnemy(dt) {
   const dist = toPlayer.length();
 
   enemy.stateTimer -= dt;
+  enemy.avoidTimer = Math.max(0, enemy.avoidTimer - dt);
 
   if (dist < 25) {
     enemy.state = 'combat';
@@ -644,14 +748,27 @@ function updateEnemy(dt) {
     enemy.rotation = angleToPlayer;
     enemy.mesh.rotation.y = angleToPlayer;
 
+    const toPlayerDir = toPlayer.clone().normalize();
+
     if (dist > 8) {
-      moveDir.copy(toPlayer.normalize());
+      moveDir.copy(toPlayerDir);
     } else if (dist < 5) {
-      moveDir.copy(toPlayer.normalize().negate());
+      moveDir.copy(toPlayerDir).negate();
     } else {
       // Strafe
       moveDir.set(-toPlayer.z, 0, toPlayer.x).normalize();
       if (Math.sin(clock.getElapsedTime() * 2) < 0) moveDir.negate();
+    }
+
+    const blockedToPlayer = dist > 6 && isPathBlockedXZ(enemy.position, player.position, enemy.radius * 0.9);
+    if (blockedToPlayer) {
+      if (enemy.avoidTimer <= 0) {
+        enemy.avoidDir.copy(chooseEnemyDetourDirection(toPlayerDir));
+        enemy.avoidTimer = 0.9 + Math.random() * 0.5;
+      }
+
+      moveDir.multiplyScalar(0.35).addScaledVector(enemy.avoidDir, 0.65);
+      if (moveDir.lengthSq() > 1e-6) moveDir.normalize();
     }
 
     const now = clock.getElapsedTime();
