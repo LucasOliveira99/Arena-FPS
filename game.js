@@ -12,6 +12,9 @@ const MAX_HEALTH = 100;
 const ENEMY_SPEED = 6;
 const ENEMY_FIRE_COOLDOWN = 0.8;
 const ENEMY_AIM_ERROR = 0.08;
+const HEALTH_PICKUP_HEAL = 30;
+const HEALTH_PICKUP_RESPAWN = 10;
+const HEALTH_PICKUP_RADIUS = 0.9;
 
 // ─── State ────────────────────────────────────────────────────────────────
 let scene, camera, renderer;
@@ -26,6 +29,7 @@ let lastPlayerShot = 0;
 let lastEnemyShot = 0;
 let enemyTarget = new THREE.Vector3();
 let colliders = [];
+let healthPickups = [];
 
 const _bulletRay = new THREE.Ray();
 const _bulletHitPoint = new THREE.Vector3();
@@ -64,6 +68,7 @@ function init() {
 
   setupLights();
   buildArena();
+  createHealthPickups();
   createPlayer();
   createEnemy();
 
@@ -396,6 +401,54 @@ function createEnemy() {
   };
 }
 
+function createHealthPickups() {
+  const pickupMat = new THREE.MeshStandardMaterial({
+    color: 0x33ee88,
+    emissive: 0x115533,
+    emissiveIntensity: 1.2,
+    metalness: 0.2,
+    roughness: 0.35,
+  });
+
+  function createPlusPickupMesh() {
+    const group = new THREE.Group();
+
+    const horizontal = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.18, 0.22), pickupMat.clone());
+    const vertical = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.9, 0.22), pickupMat.clone());
+
+    horizontal.castShadow = true;
+    horizontal.receiveShadow = true;
+    vertical.castShadow = true;
+    vertical.receiveShadow = true;
+
+    group.add(horizontal);
+    group.add(vertical);
+    return group;
+  }
+
+  const pickupPositions = [
+    new THREE.Vector3(-12, 0.6, 0),
+    new THREE.Vector3(12, 0.6, 0),
+  ];
+
+  healthPickups = pickupPositions.map((position) => {
+    const mesh = createPlusPickupMesh();
+    mesh.position.copy(position);
+
+    const glow = new THREE.PointLight(0x44ff99, 0.8, 4);
+    glow.position.set(0, 0.2, 0);
+    mesh.add(glow);
+
+    scene.add(mesh);
+    return {
+      mesh,
+      basePos: position.clone(),
+      active: true,
+      respawnTimer: 0,
+    };
+  });
+}
+
 function animateEnemyVisuals(dt, isMoving) {
   const t = clock.getElapsedTime();
   enemy.animPhase += dt * (isMoving ? 9 : 3);
@@ -463,6 +516,13 @@ function startGame() {
   bullets.forEach(b => scene.remove(b.mesh));
   bullets = [];
 
+  healthPickups.forEach((pickup) => {
+    pickup.active = true;
+    pickup.respawnTimer = 0;
+    pickup.mesh.visible = true;
+    pickup.mesh.position.copy(pickup.basePos);
+  });
+
   player.position.set(0, 1.7, 15);
   player.rotation = 0;
   enemy.position.set(0, 0, -15);
@@ -503,6 +563,36 @@ function updateHUD() {
   enemyHealthBar.style.width = `${ePct}%`;
   playerHealthText.textContent = Math.max(0, playerHealth);
   enemyHealthText.textContent = Math.max(0, enemyHealth);
+}
+
+function updateHealthPickups(dt) {
+  const t = clock.getElapsedTime();
+
+  for (const pickup of healthPickups) {
+    if (pickup.active) {
+      pickup.mesh.position.y = pickup.basePos.y + Math.sin(t * 2.5 + pickup.basePos.x * 0.1) * 0.12;
+      pickup.mesh.rotation.y += dt * 1.8;
+      pickup.mesh.rotation.x = Math.sin(t * 1.5 + pickup.basePos.x * 0.05) * 0.12;
+
+      if (playerHealth < MAX_HEALTH) {
+        const dist = pickup.mesh.position.distanceTo(player.position);
+        if (dist <= HEALTH_PICKUP_RADIUS + player.radius) {
+          playerHealth = Math.min(MAX_HEALTH, playerHealth + HEALTH_PICKUP_HEAL);
+          updateHUD();
+          pickup.active = false;
+          pickup.respawnTimer = HEALTH_PICKUP_RESPAWN;
+          pickup.mesh.visible = false;
+        }
+      }
+    } else {
+      pickup.respawnTimer -= dt;
+      if (pickup.respawnTimer <= 0) {
+        pickup.active = true;
+        pickup.mesh.visible = true;
+        pickup.mesh.position.copy(pickup.basePos);
+      }
+    }
+  }
 }
 
 // ─── Shooting ─────────────────────────────────────────────────────────────
@@ -865,6 +955,7 @@ function animate() {
   if (gameRunning) {
     updatePlayer(dt);
     updateEnemy(dt);
+    updateHealthPickups(dt);
     updateBullets(dt);
   }
 
