@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arena FPS — Duelo 3D</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="overlay">
+    <div id="menu" class="panel">
+      <h1>ARENA FPS</h1>
+      <p class="subtitle">Duelo 3D contra a IA</p>
+      <div class="controls-info">
+        <div class="control-row"><kbd>↑</kbd><kbd>↓</kbd> Mover</div>
+        <div class="control-row"><kbd>←</kbd><kbd>→</kbd> Girar</div>
+        <div class="control-row"><kbd>Espaço</kbd> Atirar</div>
+      </div>
+      <button id="start-btn">INICIAR DUELO</button>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div class="hud-top">
+        <div class="stat">
+          <span class="stat-label">VIDA</span>
+          <div class="bar-container">
+            <div id="player-health-bar" class="bar player-bar"></div>
+          </div>
+          <span id="player-health-text">100</span>
+        </div>
+        <div class="stat enemy-stat">
+          <span class="stat-label">INIMIGO</span>
+          <div class="bar-container">
+            <div id="enemy-health-bar" class="bar enemy-bar"></div>
+          </div>
+          <span id="enemy-health-text">100</span>
+        </div>
+      </div>
+      <div class="crosshair">+</div>
+      <div id="message" class="message hidden"></div>
+    </div>
+
+    <div id="game-over" class="panel hidden">
+      <h2 id="game-over-title">FIM DE JOGO</h2>
+      <p id="game-over-text"></p>
+      <button id="restart-btn">JOGAR NOVAMENTE</button>
+    </div>
+  </div>
+
+  <canvas id="game-canvas"></canvas>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

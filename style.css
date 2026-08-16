@@ -1,0 +1,223 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+  background: #0a0a0f;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #e8e8f0;
+}
+
+#game-canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+#overlay .panel,
+#overlay button {
+  pointer-events: auto;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Menu */
+.panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  background: rgba(10, 12, 24, 0.92);
+  border: 1px solid rgba(100, 140, 255, 0.3);
+  border-radius: 16px;
+  padding: 3rem 4rem;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 60px rgba(60, 100, 255, 0.15);
+}
+
+.panel h1 {
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  background: linear-gradient(135deg, #6af, #a8f);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+}
+
+.panel h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.subtitle {
+  color: #8899bb;
+  margin-bottom: 2rem;
+  font-size: 1.1rem;
+}
+
+.controls-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+  text-align: left;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #aab;
+  font-size: 0.95rem;
+}
+
+kbd {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  min-width: 2rem;
+  text-align: center;
+}
+
+button {
+  background: linear-gradient(135deg, #4488ff, #6644ff);
+  border: none;
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  padding: 1rem 2.5rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(100, 120, 255, 0.4);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* HUD */
+#hud {
+  position: absolute;
+  inset: 0;
+}
+
+.hud-top {
+  position: absolute;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3rem;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #6af;
+}
+
+.enemy-stat .stat-label {
+  color: #f66;
+}
+
+.bar-container {
+  width: 160px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.bar {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.2s;
+}
+
+.player-bar {
+  width: 100%;
+  background: linear-gradient(90deg, #2a8, #4df);
+}
+
+.enemy-bar {
+  width: 100%;
+  background: linear-gradient(90deg, #a22, #f44);
+}
+
+.stat span:last-child {
+  font-weight: 700;
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 0 4px rgba(100, 200, 255, 0.5);
+  user-select: none;
+}
+
+.message {
+  position: absolute;
+  bottom: 3rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #ffd;
+  text-shadow: 0 0 10px rgba(255, 200, 50, 0.5);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+#game-over {
+  z-index: 20;
+}
+
+#game-over-title.win {
+  color: #4f8;
+}
+
+#game-over-title.lose {
+  color: #f44;
+}
