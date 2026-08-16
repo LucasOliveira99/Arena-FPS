@@ -12,6 +12,11 @@ const MAX_HEALTH = 100;
 const ENEMY_SPEED = 6;
 const ENEMY_FIRE_COOLDOWN = 0.8;
 const ENEMY_AIM_ERROR = 0.08;
+const ENEMY_LOW_HEALTH_THRESHOLD = 55;
+const ENEMY_SIGNIFICANT_DAMAGE = 25;
+const ENEMY_DAMAGE_MEMORY = 4;
+const ENEMY_HEAL_DECISION_COOLDOWN = 2.5;
+const ENEMY_SEEK_PICKUP_TIME = 3;
 const HEALTH_PICKUP_HEAL = 30;
 const HEALTH_PICKUP_RESPAWN = 10;
 const HEALTH_PICKUP_RADIUS = 0.9;
@@ -30,6 +35,7 @@ let lastEnemyShot = 0;
 let enemyTarget = new THREE.Vector3();
 let colliders = [];
 let healthPickups = [];
+let playerWeapon = null;
 
 const _bulletRay = new THREE.Ray();
 const _bulletHitPoint = new THREE.Vector3();
@@ -59,6 +65,7 @@ function init() {
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.7, 15);
   camera.rotation.order = 'YXZ';
+  scene.add(camera);
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -70,6 +77,7 @@ function init() {
   buildArena();
   createHealthPickups();
   createPlayer();
+  createPlayerWeapon();
   createEnemy();
 
   window.addEventListener('resize', onResize);
@@ -217,6 +225,85 @@ function createPlayer() {
     rotation: 0,
     radius: 0.5,
   };
+}
+
+function createPlayerWeapon() {
+  const root = new THREE.Group();
+  root.position.set(0.42, -0.32, -0.62);
+  root.rotation.set(-0.06, -0.08, -0.08);
+
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a23, metalness: 0.85, roughness: 0.35 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: 0x334455, metalness: 0.75, roughness: 0.3 });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.15, 0.78), darkMat);
+  body.position.set(0, -0.02, -0.25);
+  root.add(body);
+
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.52), accentMat);
+  barrel.position.set(0.03, -0.03, -0.86);
+  root.add(barrel);
+
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.14), darkMat);
+  grip.position.set(-0.02, -0.2, -0.05);
+  grip.rotation.z = 0.25;
+  root.add(grip);
+
+  const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.25), accentMat);
+  topRail.position.set(0.01, 0.08, -0.45);
+  root.add(topRail);
+
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0.03, -0.03, -1.12);
+  root.add(muzzle);
+
+  const muzzleFlash = new THREE.PointLight(0x66ccff, 0, 3);
+  muzzleFlash.visible = false;
+  muzzle.add(muzzleFlash);
+
+  camera.add(root);
+
+  playerWeapon = {
+    root,
+    muzzle,
+    muzzleFlash,
+    recoil: 0,
+    bobPhase: 0,
+    flashTimer: 0,
+  };
+}
+
+function triggerPlayerWeaponFireFX() {
+  if (!playerWeapon) return;
+  playerWeapon.recoil = 1;
+  playerWeapon.flashTimer = 0.06;
+  playerWeapon.muzzleFlash.visible = true;
+  playerWeapon.muzzleFlash.intensity = 2.4;
+}
+
+function updatePlayerWeapon(dt, isMoving) {
+  if (!playerWeapon) return;
+
+  playerWeapon.bobPhase += dt * (isMoving ? 10 : 4);
+  const bob = isMoving ? 0.015 : 0.007;
+
+  playerWeapon.root.position.x = 0.42 + Math.sin(playerWeapon.bobPhase) * bob * 0.7;
+  playerWeapon.root.position.y = -0.32 + Math.abs(Math.sin(playerWeapon.bobPhase)) * bob;
+  playerWeapon.root.position.z = -0.62 + Math.cos(playerWeapon.bobPhase) * bob * 0.45 - playerWeapon.recoil * 0.08;
+
+  playerWeapon.root.rotation.x = -0.06 + playerWeapon.recoil * 0.05;
+  playerWeapon.root.rotation.y = -0.08;
+  playerWeapon.root.rotation.z = -0.08 + Math.sin(playerWeapon.bobPhase * 0.5) * 0.01;
+
+  playerWeapon.recoil = Math.max(0, playerWeapon.recoil - dt * 12);
+
+  if (playerWeapon.flashTimer > 0) {
+    playerWeapon.flashTimer = Math.max(0, playerWeapon.flashTimer - dt);
+    playerWeapon.muzzleFlash.visible = true;
+    playerWeapon.muzzleFlash.intensity = 1.5 + (playerWeapon.flashTimer / 0.06) * 1.2;
+  } else {
+    playerWeapon.muzzleFlash.visible = false;
+    playerWeapon.muzzleFlash.intensity = 0;
+  }
 }
 
 function createEnemy() {
@@ -381,6 +468,11 @@ function createEnemy() {
     stateTimer: 0,
     avoidTimer: 0,
     avoidDir: new THREE.Vector3(1, 0, 0),
+    seekingHealth: false,
+    seekHealthTimer: 0,
+    decisionCooldown: 0,
+    recentDamage: 0,
+    damageMemoryTimer: 0,
     animPhase: 0,
     hitFlash: 0,
     gunRecoil: 0,
@@ -534,10 +626,23 @@ function startGame() {
   enemy.stateTimer = 0;
   enemy.avoidTimer = 0;
   enemy.avoidDir.set(1, 0, 0);
+  enemy.seekingHealth = false;
+  enemy.seekHealthTimer = 0;
+  enemy.decisionCooldown = 0;
+  enemy.recentDamage = 0;
+  enemy.damageMemoryTimer = 0;
   enemy.animPhase = 0;
   enemy.hitFlash = 0;
   enemy.gunRecoil = 0;
   enemy.wasHit = false;
+
+  if (playerWeapon) {
+    playerWeapon.recoil = 0;
+    playerWeapon.bobPhase = 0;
+    playerWeapon.flashTimer = 0;
+    playerWeapon.muzzleFlash.visible = false;
+    playerWeapon.muzzleFlash.intensity = 0;
+  }
 
   lastPlayerShot = 0;
   lastEnemyShot = 0;
@@ -565,6 +670,22 @@ function updateHUD() {
   enemyHealthText.textContent = Math.max(0, enemyHealth);
 }
 
+function getClosestActiveHealthPickup(fromPosition) {
+  let bestPickup = null;
+  let bestDist = Infinity;
+
+  for (const pickup of healthPickups) {
+    if (!pickup.active) continue;
+    const dist = pickup.mesh.position.distanceTo(fromPosition);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestPickup = pickup;
+    }
+  }
+
+  return bestPickup;
+}
+
 function updateHealthPickups(dt) {
   const t = clock.getElapsedTime();
 
@@ -578,6 +699,21 @@ function updateHealthPickups(dt) {
         const dist = pickup.mesh.position.distanceTo(player.position);
         if (dist <= HEALTH_PICKUP_RADIUS + player.radius) {
           playerHealth = Math.min(MAX_HEALTH, playerHealth + HEALTH_PICKUP_HEAL);
+          updateHUD();
+          pickup.active = false;
+          pickup.respawnTimer = HEALTH_PICKUP_RESPAWN;
+          pickup.mesh.visible = false;
+          continue;
+        }
+      }
+
+      if (enemyHealth < MAX_HEALTH) {
+        const dist = pickup.mesh.position.distanceTo(enemy.position);
+        if (dist <= HEALTH_PICKUP_RADIUS + enemy.radius) {
+          enemyHealth = Math.min(MAX_HEALTH, enemyHealth + HEALTH_PICKUP_HEAL);
+          enemy.seekingHealth = false;
+          enemy.seekHealthTimer = 0;
+          enemy.decisionCooldown = ENEMY_HEAL_DECISION_COOLDOWN;
           updateHUD();
           pickup.active = false;
           pickup.respawnTimer = HEALTH_PICKUP_RESPAWN;
@@ -783,8 +919,9 @@ function updatePlayer(dt) {
   const moveDir = new THREE.Vector3();
   if (keys['ArrowUp']) moveDir.add(forward);
   if (keys['ArrowDown']) moveDir.sub(forward);
+  const isMoving = moveDir.lengthSq() > 0;
 
-  if (moveDir.lengthSq() > 0) {
+  if (isMoving) {
     moveDir.normalize().multiplyScalar(PLAYER_SPEED * dt);
     const nextPos = player.position.clone().add(moveDir);
     resolveCharacterCollisions(nextPos, player.radius);
@@ -804,9 +941,13 @@ function updatePlayer(dt) {
     lastPlayerShot = now;
     camera.updateMatrixWorld();
     const shootDir = getCameraForward();
+    // Keep true shot origin centered for consistent crosshair aim.
     const muzzlePos = player.position.clone().add(shootDir.clone().multiplyScalar(0.8));
+    triggerPlayerWeaponFireFX();
     shoot(muzzlePos, shootDir, true);
   }
+
+  updatePlayerWeapon(dt, isMoving);
 }
 
 // ─── Enemy AI ───────────────────────────────────────────────────────────────
@@ -817,6 +958,10 @@ function updateEnemy(dt) {
 
   enemy.stateTimer -= dt;
   enemy.avoidTimer = Math.max(0, enemy.avoidTimer - dt);
+  enemy.decisionCooldown = Math.max(0, enemy.decisionCooldown - dt);
+  enemy.seekHealthTimer = Math.max(0, enemy.seekHealthTimer - dt);
+  enemy.damageMemoryTimer = Math.max(0, enemy.damageMemoryTimer - dt);
+  if (enemy.damageMemoryTimer <= 0) enemy.recentDamage = 0;
 
   if (dist < 25) {
     enemy.state = 'combat';
@@ -839,8 +984,33 @@ function updateEnemy(dt) {
     enemy.mesh.rotation.y = angleToPlayer;
 
     const toPlayerDir = toPlayer.clone().normalize();
+    const closestPickup = getClosestActiveHealthPickup(enemy.position);
+    const canConsiderHealing = enemyHealth < MAX_HEALTH && closestPickup !== null;
+    const tookBigDamage = enemy.recentDamage >= ENEMY_SIGNIFICANT_DAMAGE;
+    const healthIsLow = enemyHealth <= ENEMY_LOW_HEALTH_THRESHOLD;
 
-    if (dist > 8) {
+    if (!enemy.seekingHealth && enemy.decisionCooldown <= 0 && canConsiderHealing && (tookBigDamage || healthIsLow)) {
+      const chooseHeal = Math.random() < 0.6;
+      enemy.decisionCooldown = ENEMY_HEAL_DECISION_COOLDOWN;
+      if (chooseHeal) {
+        enemy.seekingHealth = true;
+        enemy.seekHealthTimer = ENEMY_SEEK_PICKUP_TIME;
+      }
+    }
+
+    if (enemy.seekingHealth) {
+      if (!closestPickup || enemy.seekHealthTimer <= 0 || enemyHealth >= MAX_HEALTH) {
+        enemy.seekingHealth = false;
+      }
+    }
+
+    if (enemy.seekingHealth && closestPickup) {
+      const toPickup = closestPickup.mesh.position.clone().sub(enemy.position);
+      toPickup.y = 0;
+      if (toPickup.lengthSq() > 1e-6) {
+        moveDir.copy(toPickup.normalize());
+      }
+    } else if (dist > 8) {
       moveDir.copy(toPlayerDir);
     } else if (dist < 5) {
       moveDir.copy(toPlayerDir).negate();
@@ -850,7 +1020,7 @@ function updateEnemy(dt) {
       if (Math.sin(clock.getElapsedTime() * 2) < 0) moveDir.negate();
     }
 
-    const blockedToPlayer = dist > 6 && isPathBlockedXZ(enemy.position, player.position, enemy.radius * 0.9);
+    const blockedToPlayer = !enemy.seekingHealth && dist > 6 && isPathBlockedXZ(enemy.position, player.position, enemy.radius * 0.9);
     if (blockedToPlayer) {
       if (enemy.avoidTimer <= 0) {
         enemy.avoidDir.copy(chooseEnemyDetourDirection(toPlayerDir));
@@ -862,7 +1032,7 @@ function updateEnemy(dt) {
     }
 
     const now = clock.getElapsedTime();
-    if (now - lastEnemyShot >= ENEMY_FIRE_COOLDOWN && dist < 30) {
+    if (!enemy.seekingHealth && now - lastEnemyShot >= ENEMY_FIRE_COOLDOWN && dist < 30) {
       lastEnemyShot = now;
       enemy.gunRecoil = 1;
       const shootDir = toPlayer.clone().normalize();
@@ -918,6 +1088,8 @@ function updateBullets(dt) {
       const dist = b.mesh.position.distanceTo(enemyCenter);
       if (dist < enemy.radius + 0.3) {
         enemyHealth -= BULLET_DAMAGE;
+        enemy.recentDamage += BULLET_DAMAGE;
+        enemy.damageMemoryTimer = ENEMY_DAMAGE_MEMORY;
         hit = true;
         flashEnemyHit();
         updateHUD();
