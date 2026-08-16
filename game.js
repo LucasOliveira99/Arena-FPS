@@ -12,6 +12,22 @@ const MAX_HEALTH = 100;
 const ENEMY_SPEED = 6;
 const ENEMY_FIRE_COOLDOWN = 0.8;
 const ENEMY_AIM_ERROR = 0.08;
+const DIFFICULTY_SETTINGS = {
+  normal: {
+    enemyFireCooldown: ENEMY_FIRE_COOLDOWN,
+    strafeSwitchSpeed: 2,
+    strafeMixLongRange: 0,
+    retreatStrafeMix: 0,
+    midRangeForwardMix: 0,
+  },
+  hard: {
+    enemyFireCooldown: 0.5,
+    strafeSwitchSpeed: 5.0,
+    strafeMixLongRange: 1.0,
+    retreatStrafeMix: 0.35,
+    midRangeForwardMix: 0.2,
+  },
+};
 const ENEMY_LOW_HEALTH_THRESHOLD = 55;
 const ENEMY_SIGNIFICANT_DAMAGE = 25;
 const ENEMY_DAMAGE_MEMORY = 4;
@@ -36,6 +52,7 @@ let enemyTarget = new THREE.Vector3();
 let colliders = [];
 let healthPickups = [];
 let playerWeapon = null;
+let currentDifficulty = 'normal';
 
 const _bulletRay = new THREE.Ray();
 const _bulletHitPoint = new THREE.Vector3();
@@ -48,6 +65,8 @@ const hud = document.getElementById('hud');
 const gameOverPanel = document.getElementById('game-over');
 const startBtn = document.getElementById('start-btn');
 const restartBtn = document.getElementById('restart-btn');
+const difficultyNormalBtn = document.getElementById('difficulty-normal');
+const difficultyHardBtn = document.getElementById('difficulty-hard');
 const playerHealthBar = document.getElementById('player-health-bar');
 const enemyHealthBar = document.getElementById('enemy-health-bar');
 const playerHealthText = document.getElementById('player-health-text');
@@ -55,6 +74,20 @@ const enemyHealthText = document.getElementById('enemy-health-text');
 const gameOverTitle = document.getElementById('game-over-title');
 const gameOverText = document.getElementById('game-over-text');
 const messageEl = document.getElementById('message');
+
+function setDifficulty(mode) {
+  currentDifficulty = mode === 'hard' ? 'hard' : 'normal';
+
+  const isNormal = currentDifficulty === 'normal';
+  if (difficultyNormalBtn) {
+    difficultyNormalBtn.classList.toggle('is-active', isNormal);
+    difficultyNormalBtn.setAttribute('aria-pressed', String(isNormal));
+  }
+  if (difficultyHardBtn) {
+    difficultyHardBtn.classList.toggle('is-active', !isNormal);
+    difficultyHardBtn.setAttribute('aria-pressed', String(!isNormal));
+  }
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────
 function init() {
@@ -91,6 +124,9 @@ function init() {
 
   startBtn.addEventListener('click', startGame);
   restartBtn.addEventListener('click', startGame);
+  if (difficultyNormalBtn) difficultyNormalBtn.addEventListener('click', () => setDifficulty('normal'));
+  if (difficultyHardBtn) difficultyHardBtn.addEventListener('click', () => setDifficulty('hard'));
+  setDifficulty(currentDifficulty);
 
   animate();
 }
@@ -955,6 +991,7 @@ function updateEnemy(dt) {
   const toPlayer = player.position.clone().sub(enemy.position);
   toPlayer.y = 0;
   const dist = toPlayer.length();
+  const difficulty = DIFFICULTY_SETTINGS[currentDifficulty] || DIFFICULTY_SETTINGS.normal;
 
   enemy.stateTimer -= dt;
   enemy.avoidTimer = Math.max(0, enemy.avoidTimer - dt);
@@ -1004,6 +1041,12 @@ function updateEnemy(dt) {
       }
     }
 
+    const strafeDir = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+    if (strafeDir.lengthSq() > 1e-6) {
+      strafeDir.normalize();
+      if (Math.sin(clock.getElapsedTime() * difficulty.strafeSwitchSpeed) < 0) strafeDir.negate();
+    }
+
     if (enemy.seekingHealth && closestPickup) {
       const toPickup = closestPickup.mesh.position.clone().sub(enemy.position);
       toPickup.y = 0;
@@ -1012,12 +1055,22 @@ function updateEnemy(dt) {
       }
     } else if (dist > 8) {
       moveDir.copy(toPlayerDir);
+      if (difficulty.strafeMixLongRange > 0 && strafeDir.lengthSq() > 1e-6) {
+        moveDir.multiplyScalar(1 - difficulty.strafeMixLongRange).addScaledVector(strafeDir, difficulty.strafeMixLongRange);
+        if (moveDir.lengthSq() > 1e-6) moveDir.normalize();
+      }
     } else if (dist < 5) {
       moveDir.copy(toPlayerDir).negate();
+      if (difficulty.retreatStrafeMix > 0 && strafeDir.lengthSq() > 1e-6) {
+        moveDir.multiplyScalar(1 - difficulty.retreatStrafeMix).addScaledVector(strafeDir, difficulty.retreatStrafeMix);
+        if (moveDir.lengthSq() > 1e-6) moveDir.normalize();
+      }
     } else {
-      // Strafe
-      moveDir.set(-toPlayer.z, 0, toPlayer.x).normalize();
-      if (Math.sin(clock.getElapsedTime() * 2) < 0) moveDir.negate();
+      moveDir.copy(strafeDir);
+      if (difficulty.midRangeForwardMix > 0) {
+        moveDir.multiplyScalar(1 - difficulty.midRangeForwardMix).addScaledVector(toPlayerDir, difficulty.midRangeForwardMix);
+        if (moveDir.lengthSq() > 1e-6) moveDir.normalize();
+      }
     }
 
     const blockedToPlayer = !enemy.seekingHealth && dist > 6 && isPathBlockedXZ(enemy.position, player.position, enemy.radius * 0.9);
@@ -1032,7 +1085,7 @@ function updateEnemy(dt) {
     }
 
     const now = clock.getElapsedTime();
-    if (!enemy.seekingHealth && now - lastEnemyShot >= ENEMY_FIRE_COOLDOWN && dist < 30) {
+    if (!enemy.seekingHealth && now - lastEnemyShot >= difficulty.enemyFireCooldown && dist < 30) {
       lastEnemyShot = now;
       enemy.gunRecoil = 1;
       const shootDir = toPlayer.clone().normalize();

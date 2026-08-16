@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Arena FPS — Duelo 3D</title>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
   <div id="overlay">
     <div id="menu" class="panel">
@@ -15,6 +17,15 @@
         <div class="control-row"><kbd>↑</kbd><kbd>↓</kbd> Mover</div>
         <div class="control-row"><kbd>←</kbd><kbd>→</kbd> Girar</div>
         <div class="control-row"><kbd>Espaço</kbd> Atirar</div>
+      </div>
+      <div class="difficulty-row">
+        <span class="difficulty-title">DIFICULDADE</span>
+        <div class="difficulty-toggle" role="group" aria-label="Selecionar dificuldade">
+          <button id="difficulty-normal" type="button" class="difficulty-btn is-active" data-difficulty="normal"
+            aria-pressed="true">NORMAL</button>
+          <button id="difficulty-hard" type="button" class="difficulty-btn" data-difficulty="hard"
+            aria-pressed="false">DIFÍCIL</button>
+        </div>
       </div>
       <button id="start-btn">INICIAR DUELO</button>
     </div>
@@ -59,4 +70,5 @@
   </script>
   <script type="module" src="game.js"></script>
 </body>
+
 </html>
